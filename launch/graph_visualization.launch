@@ -1,0 +1,12 @@
+<launch>
+  <!-- Lancement de rosbridge -->
+  <node pkg="rosbridge_server" type="rosbridge_websocket" name="rosbridge_websocket" output="screen">
+    <param name="port" value="9090" />
+  </node>
+
+  <!-- Démarrage du serveur web -->
+<!--  <node pkg="roslaunch" type="roslaunch" name="start_web_server" output="screen" args="python3 -m http.server 8000 &#45;&#45;directory $(find graph_visualization)/web"/>-->
+
+  <!-- Commande pour ouvrir le navigateur -->
+<!--  <node pkg="roslaunch" type="roslaunch" name="open_browser" output="screen" args="xdg-open http://localhost:8000" required="true"/>-->
+</launch>

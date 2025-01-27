@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Graph Visualization</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/roslib/build/roslib.min.js"></script>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+    }
+    #tabs {
+      display: flex;
+      padding: 10px;
+      background-color: #f1f1f1;
+      border-bottom: 1px solid #ccc;
+    }
+    #tabs button {
+      margin-right: 5px;
+      padding: 10px;
+      cursor: pointer;
+    }
+    #tabs button.active {
+      background-color: #ddd;
+      font-weight: bold;
+    }
+    .tab-content {
+      display: none;
+      padding: 10px;
+      overflow: auto;
+      height: calc(100% - 50px);
+    }
+    .tab-content.active {
+      display: block;
+    }
+    .graph-container {
+      margin-bottom: 20px;
+      border: 1px solid #ccc;
+      padding: 10px;
+      background-color: #fff;
+    }
+    .graph-title {
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+    .node { cursor: pointer; }
+    .active { fill: red; }
+    .inactive { fill: blue; }
+    .link { stroke: #aaa; stroke-width: 2px; }
+    .link-text { font-size: 12px; fill: black; }
+    .node-label { font-size: 12px; fill: black; }
+  </style>
+</head>
+<body>
+  <div id="tabs"></div>
+  <div id="tab-contents"></div>
+
+  <script>
+    const ros = new ROSLIB.Ros({
+      url: 'ws://localhost:9090'
+    });
+
+    ros.on('connection', () => console.log('Connected to rosbridge server'));
+    ros.on('error', (error) => console.error('Error connecting to rosbridge:', error));
+    ros.on('close', () => console.log('Connection to rosbridge closed'));
+
+    const graphTopic = new ROSLIB.Topic({
+      ros: ros,
+      name: '/graph_data',
+      messageType: 'graph_visualization/GraphMessage'
+    });
+
+    const graphs = {};
+    let currentTab = null;
+
+    graphTopic.subscribe((message) => {
+      const { origin, name, graph_json } = message;
+      const graphData = JSON.parse(graph_json);
+
+      console.log(`Received graph data:`, message);
+
+      if (!graphs[origin]) {
+        graphs[origin] = {};
+        createTab(origin);
+        createTabContent(origin);
+      }
+
+      if (!graphs[origin][name]) {
+        graphs[origin][name] = graphData;
+        createGraphContainer(origin, name);
+      } else {
+        console.log(`Updating graph: ${name} in tab: ${origin}`);
+      }
+
+      graphs[origin][name] = graphData;
+      renderGraph(origin, name, graphData);
+    });
+
+    function createTab(origin) {
+      const tabs = document.getElementById("tabs");
+      const tab = document.createElement("button");
+      tab.textContent = origin;
+      tab.id = `tab-${origin}`;
+      tab.onclick = () => {
+        currentTab = origin;
+        showTabContent(origin);
+        updateTabStyles();
+        console.log(`Switched to tab: ${origin}`);
+      };
+      tabs.appendChild(tab);
+
+      if (!currentTab) {
+        currentTab = origin;
+        showTabContent(origin);
+        updateTabStyles();
+        console.log(`Initial tab set to: ${origin}`);
+      }
+    }
+
+    function createTabContent(origin) {
+      const tabContents = document.getElementById("tab-contents");
+      const tabContent = document.createElement("div");
+      tabContent.id = `tab-content-${origin}`;
+      tabContent.className = "tab-content";
+      tabContents.appendChild(tabContent);
+    }
+
+    function updateTabStyles() {
+      document.querySelectorAll("#tabs button").forEach(button => {
+        button.classList.remove("active");
+      });
+      const currentTabButton = document.getElementById(`tab-${currentTab}`);
+      if (currentTabButton) {
+        currentTabButton.classList.add("active");
+      }
+
+      document.querySelectorAll(".tab-content").forEach(content => {
+        content.classList.remove("active");
+      });
+      const currentTabContent = document.getElementById(`tab-content-${currentTab}`);
+      if (currentTabContent) {
+        currentTabContent.classList.add("active");
+      }
+    }
+
+    function showTabContent(origin) {
+      currentTab = origin;
+      updateTabStyles();
+    }
+
+    function createGraphContainer(origin, name) {
+      const tabContent = document.getElementById(`tab-content-${origin}`);
+      const container = document.createElement("div");
+      container.id = `graph-container-${origin}-${name}`;
+      container.className = "graph-container";
+
+      const title = document.createElement("div");
+      title.className = "graph-title";
+      title.textContent = `Graph: ${name}`;
+
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("width", "100%");
+      svg.setAttribute("height", "400");
+      svg.id = `svg-${origin}-${name}`;
+
+      container.appendChild(title);
+      container.appendChild(svg);
+      tabContent.appendChild(container);
+    }
+
+    function renderGraph(origin, name, graphData) {
+      const svg = d3.select(`#svg-${origin}-${name}`);
+      svg.selectAll("*").remove();
+
+      const link = svg.selectAll(".link")
+        .data(graphData.links)
+        .enter().append("line")
+        .attr("class", "link")
+        .attr("x1", d => getNodePosition(d.source).x)
+        .attr("y1", d => getNodePosition(d.source).y)
+        .attr("x2", d => getNodePosition(d.target).x)
+        .attr("y2", d => getNodePosition(d.target).y);
+
+      const linkText = svg.selectAll(".link-text")
+        .data(graphData.links)
+        .enter().append("text")
+        .attr("class", "link-text")
+        .attr("x", d => (getNodePosition(d.source).x + getNodePosition(d.target).x) / 2)
+        .attr("y", d => (getNodePosition(d.source).y + getNodePosition(d.target).y) / 2)
+        .text(d => d.label);
+
+      const node = svg.selectAll(".node")
+        .data(graphData.nodes)
+        .enter().append("circle")
+        .attr("class", d => d.active ? "node active" : "node inactive")
+        .attr("r", 10)
+        .attr("cx", d => getNodePosition(d.id).x)
+        .attr("cy", d => getNodePosition(d.id).y);
+
+      const nodeLabel = svg.selectAll(".node-label")
+        .data(graphData.nodes)
+        .enter().append("text")
+        .attr("class", "node-label")
+        .attr("x", d => getNodePosition(d.id).x)
+        .attr("y", d => getNodePosition(d.id).y - 15)
+        .text(d => d.label);
+    }
+
+    function getNodePosition(id) {
+      const index = id.charCodeAt(0) - 65; // Example position mapping
+      return { x: 100 + index * 100, y: 300 };
+    }
+  </script>
+</body>
+</html>
